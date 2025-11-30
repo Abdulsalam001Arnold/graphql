@@ -13,7 +13,6 @@ export const connectDB = async () => {
         const db = await mongoose.connect(process.env.MONGO_URI, {
             serverSelectionTimeoutMS: 30000,
             heartbeatFrequencyMS: 10000,
-
         })
         isConnected = db.connections[0].readyState
         console.log('New connection to database established')

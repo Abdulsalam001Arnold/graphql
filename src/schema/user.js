@@ -16,6 +16,11 @@ export const userSchema = gql`
      password: String!
  }
  
+ input LoginInput {
+ email: String!
+     password: String!
+ }
+ 
  input UpdateUserInput {
  id: ID!
      name: String
@@ -28,8 +33,14 @@ export const userSchema = gql`
      user(id: ID!): User
  }
  
+ type AuthPayload {
+ token: String!
+ user: User!
+ }
+ 
  type Mutation {
- createUser(input: RegisterInput!): User
+ createUser(input: RegisterInput!): AuthPayload!
+     loginUser(input: LoginInput!): AuthPayload!
      updateUser(input: UpdateUserInput!): User!
      deleteUser(id: ID!): User!
  }
