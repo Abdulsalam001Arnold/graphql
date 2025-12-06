@@ -8,6 +8,7 @@ export const commentSchema = gql`
     text: String!
         author: User!
         post: Post!
+        createdAt: Date!
     }
     
     input CreateCommentInput{
@@ -17,7 +18,7 @@ export const commentSchema = gql`
     }
     
     extend type Query {
-    comments: [Comment!]!
+    comments(page: Int, limit: Int, sortBy: String, newest: Boolean, postId: ID): [Comment!]!
     comment(id: ID!): Comment!
     }
     

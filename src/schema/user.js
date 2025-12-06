@@ -3,11 +3,13 @@
 import gql from 'graphql-tag'
 
 export const userSchema = gql`
+    
  type User {
      id: ID!
  name: String!
      email: String!
      password: String!
+     posts(limit: Int, page: Int, sortBy: String, newest: Boolean): [Post!]!
  }
  
  input RegisterInput {
@@ -29,12 +31,12 @@ export const userSchema = gql`
  }
  
  type Query {
- users: [User!]!
+ users(page: Int, limit: Int, sortBy: String, newest: Boolean, email: String): [User!]!
      user(id: ID!): User
  }
  
  type AuthPayload {
- token: String!
+     token: String!
  user: User!
  }
  

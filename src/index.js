@@ -6,7 +6,7 @@ import cookieParser from "cookie-parser";
 import bodyParser from "body-parser";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
-
+import {userLoader} from "./loaders/userLoader.js";
 import { typeDefs } from "./schema/index.js";
 import { resolvers } from "./resolvers/index.js";
 import { connectDB } from "./db/connect.js";
@@ -46,7 +46,8 @@ app.use('/graphql', expressMiddleware(server, {
             models: { userModel, postModel, commentModel },
             currentUser,
             req,
-            res
+            res,
+            userLoader
         };
     }
 }));

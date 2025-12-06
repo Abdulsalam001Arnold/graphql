@@ -2,10 +2,23 @@
 import bcrypt from 'bcryptjs'
 import {generateToken} from "../utils/token.js";
 import {protect} from "../middleware/protect.js";
+import {AppError} from "../utils/error.js";
+import Redis from "ioredis";
+
+    // const redis = new Redis();
+
 export const userResolvers = {
     Query: {
-        users: async (_, __, {models}) => {
-           const users = await models.userModel.find()
+        users: async (_, {limit = 10, page = 1, sortBy = "createdAt", newest = true, email}, {models}) => {
+            console.log(email)
+            const query = email ? {email} : {}
+            const skip = (page - 1) * limit
+           const users = await models.userModel.find(query).sort({
+               [sortBy]: newest ? -1 : 1
+           }).skip(skip).limit(limit)
+            // const cachedUsers = await redis.get('users')
+            // if(cachedUsers) return JSON.parse(cachedUsers)
+            // await redis.setex('users', 60, JSON.stringify(users))
             return users
         },
         user: async (_, {id}, {models}) => {
@@ -21,7 +34,7 @@ export const userResolvers = {
             try{
             if(email && name && password) {
                 const existingUser = await models.userModel.findOne({email})
-                if(existingUser) throw new Error('User already exists')
+                if(existingUser) throw new AppError('User already exists', 400)
                 const hashedPassword = await bcrypt.hash(password, 12)
 
            const user = await models.userModel.create({
@@ -33,7 +46,7 @@ export const userResolvers = {
                 res.cookie('token', token, {httpOnly: true, secure: process.env.NODE_ENV !== "development", sameSite: 'strict', maxAge: 1000 * 60 * 60 * 24 * 1})
                 return {user}
             }else{
-                throw new Error('Please provide all required fields')
+                throw new AppError('Please provide all required fields', 400)
             }
             }catch(err){
                 if(err instanceof Error) throw new Error(err.message)
@@ -45,30 +58,30 @@ export const userResolvers = {
             try{
                 if(email && password) {
                     const user = await models.userModel.findOne({email})
-                    if(!user) throw new Error('User does not exist, please register')
+                    if(!user) throw new AppError('User does not exist, please register', 404)
                     const comparedPassword = await bcrypt.compare(password, user.password)
-                    if(!comparedPassword) throw new Error('Invalid credentials')
+                    if(!comparedPassword) throw new AppError('Invalid credentials', 400)
                     const token = await generateToken(user)
                     res.cookie('token', token,
                         {
                             httpOnly: true,
                             secure: process.env.NODE_ENV !== 'development',
                             sameSite: 'strict',
-                            maxAge: 1000 * 60 * 60 * 24 * 1 //1 day
+                            maxAge: 1000 * 60 * 60 * 24
                         })
                     return {user}
                 }else{
-                    throw new Error('Please provide all required fields')
+                    throw new AppError('Please provide all required fields', 400)
                 }
             }catch(err){
-                if(err instanceof Error) throw new Error()
+                if(err instanceof Error) throw new AppError(err.message, err.code)
             }
         },
 
         updateUser: async(_, {input}, {models, currentUser}) => {
 
             const { name, email, password, id } = input;
-            protect(currentUser)
+            await protect(currentUser)
             const hashedPassword = await bcrypt.hash(password, 12)
             const updatedUser = await models.userModel.findByIdAndUpdate(id, {name, email, password: hashedPassword}, {new: true})
 
