@@ -1,13 +1,27 @@
+
 import { AppError } from "../utils/error.js";
+import {cacheService} from "../services/cachedService.js";
+import {GraphQLError} from "graphql";
+import {postsTransformer, postTransformer} from "../utils/postTransformer.js";
+import {commentsTransformer} from "../utils/commentTransformer.js";
 
 export const postResolvers = {
     Query: {
         posts: async (_, { page = 1, limit = 10, sortBy = 'createdAt', newest = true, userId }, { models }) => {
             try {
+                const cachedKey = await cacheService.generateKey('posts:list', `${page}-${limit}-${sortBy}-${newest}-${userId || 'all'}`);
+
+                const cachedData = await cacheService.get(cachedKey)
+                if(cachedData) {
+                    console.log('Cache HIT:', postsTransformer(cachedData))
+                    return postsTransformer(cachedData)
+                }
+
+                console.log('Cache MISS: hitting the server now!', cachedKey)
                 const skip = (page - 1) * limit;
                 const sortOrder = newest ? -1 : 1;
 
-                // Build filter object
+
                 const filter = userId ? { userId } : {};
 
                 // Validate sortBy field
@@ -18,9 +32,11 @@ export const postResolvers = {
                     .find(filter)
                     .sort({ [sortField]: sortOrder })
                     .skip(skip)
-                    .limit(limit);
-
-                return posts;
+                    .limit(limit)
+                    .lean()
+                const transformedPosts = postsTransformer(posts)
+                    await cacheService.set(cachedKey, transformedPosts, cacheService.TTL.MEDIUM)
+                return transformedPosts;
             } catch (error) {
                 throw new AppError('Failed to fetch posts', 500);
             }
@@ -28,13 +44,23 @@ export const postResolvers = {
 
         post: async (_, { id }, { models }) => {
             try {
+                const cachedKey = await cacheService.generateKey('post', id);
+                const cachedData = await cacheService.get(cachedKey)
+
+                if(cachedData) {
+                    console.log('Cache HIT:', postTransformer(cachedData))
+                    return postTransformer(cachedData)
+                }
+
                 const post = await models.postModel.findById(id);
 
-                if (!post) {
+                if (!post && !cachedData) {
                     throw new AppError('Post not found', 404);
                 }
 
-                return post;
+                const transformedPost = postTransformer(post)
+                await cacheService.set(cachedKey, transformedPost);
+                return transformedPost;
             } catch (error) {
                 if (error instanceof AppError) throw error;
                 throw new AppError('Failed to fetch post', 500);
@@ -75,7 +101,10 @@ export const postResolvers = {
                     createdAt: new Date()
                 });
 
-                return post;
+                await cacheService.deletePattern('posts:list:*');
+                await cacheService.deletePattern(`posts:user:${userId}:*`)
+
+                return postTransformer(post.toObject());
             } catch (error) {
                 if (error instanceof AppError) throw error;
                 throw new AppError('Failed to create post', 500);
@@ -84,25 +113,35 @@ export const postResolvers = {
     },
 
     Post: {
-        // Resolve the author field - this is the key resolver for the relationship
-        author: async (parent, _, { models }) => {
+        author: async (parent, _, { models,  userLoader}) => {
             try {
-                // parent.userId contains the user ID from the post document
-                const author = await models.userModel.findById(parent.userId);
+                const author = await userLoader.load(parent.userId.toString())
 
                 if (!author) {
                     throw new AppError('Author not found', 404);
                 }
-
+                console.log('Author loaded from cache:', author)
                 return author;
             } catch (error) {
                 if (error instanceof AppError) throw error;
                 throw new AppError('Failed to fetch author', 500);
+                throw new GraphQLError('INTERNAL_SERVER_ERROR', { extensions: { code: 'INTERNAL_SERVER_ERROR', exception: { message: error.message, stack: error.stack } } });
             }
         },
 
         comments: async (parent, { limit = 10, page = 1, sortBy = 'createdAt', newest = true }, { models }) => {
             try {
+                const cachedKey = await cacheService.generateKey(`comments:post:${parent.id}`, `${limit}-${page}-${sortBy}-${newest}`);
+
+                const cachedData = await cacheService.get(cachedKey)
+
+                if(cachedData) {
+                    console.log('Cache HIT:', cachedKey)
+                    return commentsTransformer(cachedData)
+                }
+
+                console.log('Cache MISS:', cachedKey)
+
                 const skip = (page - 1) * limit;
                 const sortOrder = newest ? -1 : 1;
 
@@ -114,11 +153,15 @@ export const postResolvers = {
                     .find({ postId: parent.id })
                     .sort({ [sortField]: sortOrder })
                     .skip(skip)
-                    .limit(limit);
+                    .limit(limit)
+                    .lean()
+                    const transformedComments = commentsTransformer(comments)
+                await cacheService.set(cachedKey, transformedComments, cacheService.TTL.SHORT)
 
-                return comments;
+                return transformedComments;
             } catch (error) {
                 throw new AppError('Failed to fetch comments', 500);
+                throw new GraphQLError('INTERNAL_SERVER_ERROR', { extensions: { code: 'INTERNAL_SERVER_ERROR', exception: { message: error.message, stack: error.stack } } });
             }
         }
     }
